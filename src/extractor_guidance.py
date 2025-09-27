@@ -1,8 +1,7 @@
-
 import os, re, io, sys, json, pathlib, requests, pandas as pd
 from datetime import datetime
 from pdfminer.high_level import extract_text
-import google.generativeai as genai
+import google.generativeai as genai  # <-- stable Gemini client
 
 DATA = pathlib.Path("data")
 SEED = DATA/"seed_sources.csv"
@@ -17,10 +16,9 @@ PROMPT = """You are an extraction engine. From the text below, return ONLY JSON:
 Rules: extract only numeric forward guidance from management (not analysts). If none, facts=[].
 """
 
-
 def fetch_text(url: str) -> str:
     h = {"User-Agent":"Mozilla/5.0"}
-    r = requests.get(url, headers=h, timeout=60)
+    r = requests.get(url, headers=h, timeout=60, allow_redirects=True)
     r.raise_for_status()
     ctype = r.headers.get("content-type","").lower()
     if "pdf" in ctype or url.lower().endswith(".pdf"):
@@ -31,33 +29,26 @@ def fetch_text(url: str) -> str:
                 txt = ""
         return txt
     else:
-        # crude HTML -> text
         html = r.text
-        # remove scripts/styles
-        html = re.sub(r"(?is)<(script|style).*?>.*?</\1>", "", html)
+        html = re.sub(r"(?is)<(script|style).*?>.*?</\\1>", "", html)
         text = re.sub(r"(?is)<[^>]+>", " ", html)
-        text = re.sub(r"\s+", " ", text)
-        return text[:200000]  # cap to avoid giant pages
-
+        text = re.sub(r"\\s+", " ", text)
+        return text[:200000]
 
 def call_llm(text: str, url: str, company: str, as_of_date: str) -> list[dict]:
-    # Gemini (stable client + model)
     api_key = os.environ.get("GEMINI_API_KEY")
     if not api_key:
         print("GEMINI_API_KEY not set; cannot extract.", file=sys.stderr)
         return []
 
-    # Configure once
     genai.configure(api_key=api_key)
     model = genai.GenerativeModel(model_name="gemini-1.5-flash")  # or "gemini-1.5-flash-latest"
 
-    # Ask for JSON only
     resp = model.generate_content(
         [PROMPT, text],
         generation_config={"response_mime_type": "application/json"}
     )
 
-    # Parse JSON safely
     try:
         data = json.loads(resp.text)
     except Exception:
@@ -66,8 +57,8 @@ def call_llm(text: str, url: str, company: str, as_of_date: str) -> list[dict]:
     facts = data.get("facts") or []
     out = []
     for f in facts:
-        metric = str(f.get("metric", "")).upper()
-        if metric not in {"PAT", "REVENUE", "EBITDA"}:
+        metric = str(f.get("metric","")).upper()
+        if metric not in {"PAT","REVENUE","EBITDA"}:
             continue
         lo = f.get("growth_value_low")
         hi = f.get("growth_value_high")
@@ -89,8 +80,6 @@ def call_llm(text: str, url: str, company: str, as_of_date: str) -> list[dict]:
             "source": url
         })
     return out
-
-
 
 def main():
     if not SEED.exists():
@@ -114,8 +103,11 @@ def main():
         pd.DataFrame(all_rows).to_csv(GUID, index=False)
         print("Wrote", GUID)
     else:
-        # create empty file with headers so downstream steps don't break
-        pd.DataFrame(columns=["company","as_of_date","metric","growth_type","growth_low","growth_high","base_period","target_period","time_horizon_months","quote","speaker","confidence","source"]).to_csv(GUID, index=False)
+        pd.DataFrame(columns=[
+            "company","as_of_date","metric","growth_type","growth_low","growth_high",
+            "base_period","target_period","time_horizon_months","quote","speaker",
+            "confidence","source"
+        ]).to_csv(GUID, index=False)
         print("No guidance extracted; wrote empty", GUID)
 
 if __name__ == "__main__":
