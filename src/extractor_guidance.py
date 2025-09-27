@@ -2,6 +2,7 @@
 import os, re, io, sys, json, pathlib, requests, pandas as pd
 from datetime import datetime
 from pdfminer.high_level import extract_text
+import google.generativeai as genai
 
 DATA = pathlib.Path("data")
 SEED = DATA/"seed_sources.csv"
@@ -40,31 +41,37 @@ def fetch_text(url: str) -> str:
 
 
 def call_llm(text: str, url: str, company: str, as_of_date: str) -> list[dict]:
-    # Gemini 1.5 Flash via google-genai
-    from google import genai
+    # Gemini (stable client + model)
     api_key = os.environ.get("GEMINI_API_KEY")
     if not api_key:
         print("GEMINI_API_KEY not set; cannot extract.", file=sys.stderr)
         return []
-    client = genai.Client(api_key=api_key)
-    resp = client.models.generate_content(
-        model="gemini-1.5-flash",
-        contents=[PROMPT, text],
-        config={"response_mime_type":"application/json"}
+
+    # Configure once
+    genai.configure(api_key=api_key)
+    model = genai.GenerativeModel(model_name="gemini-1.5-flash")  # or "gemini-1.5-flash-latest"
+
+    # Ask for JSON only
+    resp = model.generate_content(
+        [PROMPT, text],
+        generation_config={"response_mime_type": "application/json"}
     )
+
+    # Parse JSON safely
     try:
         data = json.loads(resp.text)
     except Exception:
         return []
+
     facts = data.get("facts") or []
     out = []
     for f in facts:
-        metric = str(f.get("metric","")).upper()
-        if metric not in {"PAT","REVENUE","EBITDA"}: 
+        metric = str(f.get("metric", "")).upper()
+        if metric not in {"PAT", "REVENUE", "EBITDA"}:
             continue
-        # numeric guardrails
-        lo = f.get("growth_value_low"); hi=f.get("growth_value_high")
-        if (lo is None and hi is None):
+        lo = f.get("growth_value_low")
+        hi = f.get("growth_value_high")
+        if lo is None and hi is None:
             continue
         out.append({
             "company": company,
@@ -82,6 +89,7 @@ def call_llm(text: str, url: str, company: str, as_of_date: str) -> list[dict]:
             "source": url
         })
     return out
+
 
 
 def main():
