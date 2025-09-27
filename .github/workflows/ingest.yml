@@ -1,7 +1,7 @@
 name: ingest-and-build
 on:
-  schedule: [{ cron: "0 3 * * *" }]  # runs daily ~08:30 IST
-  workflow_dispatch:
+  schedule: [{ cron: "0 3 * * *" }]  # daily ~08:30 IST
+  workflow_dispatch:                 # <-- enables the "Run workflow" button
 
 jobs:
   run:
@@ -14,27 +14,44 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with: { python-version: "3.11" }
+
+      # Install deps (force the correct Gemini client)
       - name: Install deps
-  run: |
-    python -m pip install -U pip
-    # remove old v1beta client if it is present
-    pip uninstall -y google-genai || true
-    # install stable client explicitly
-    pip install --no-cache-dir google-generativeai==0.7.2 pandas==2.2.2 requests==2.32.3 pdfminer.six==20231228
-    # sanity print to confirm which module is loaded
-    python - <<'PY'
+        run: |
+          python -m pip install -U pip
+          pip uninstall -y google-genai || true
+          pip install --no-cache-dir google-generativeai==0.7.2 pandas==2.2.2 requests==2.32.3 pdfminer.six==20231228
+          python - <<'PY'
 import google.generativeai as genai, sys
 print("GENAI OK", getattr(genai, "__version__", "unknown"), genai.__file__)
 PY
+
+      # (Optional but helpful) show your inputs
+      - name: Debug inputs
+        run: |
+          echo '--- data/seed_sources.csv ---'
+          test -f data/seed_sources.csv && sed -n '1,60p' data/seed_sources.csv || echo 'MISSING'
+          echo '--- data/pe_snapshots.csv ---'
+          test -f data/pe_snapshots.csv && sed -n '1,60p' data/pe_snapshots.csv || echo 'MISSING'
 
       - name: Extract guidance (real mode)
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         run: |
           python src/extractor_guidance.py
+
       - name: Compute metrics
         run: |
           python src/compute_metrics.py
+
+      # Show outputs so we know what was produced
+      - name: Debug outputs
+        run: |
+          echo '--- data/guidance_facts.csv ---'
+          test -f data/guidance_facts.csv && sed -n '1,60p' data/guidance_facts.csv || echo 'MISSING'
+          echo '--- data/forward_peg.csv ---'
+          test -f data/forward_peg.csv && sed -n '1,60p' data/forward_peg.csv || echo 'MISSING'
+
       - name: Commit data
         run: |
           git config user.name "gh-actions"
@@ -42,10 +59,12 @@ PY
           git add data/*.csv || true
           git commit -m "Auto-update data $(date -u +'%Y-%m-%dT%H:%M:%SZ')" || echo "No changes"
           git push
+
       - name: Upload Pages Artifact
         uses: actions/upload-pages-artifact@v3
         with:
           path: dashboard
+
   deploy:
     needs: run
     runs-on: ubuntu-latest
