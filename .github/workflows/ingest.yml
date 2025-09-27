@@ -15,9 +15,18 @@ jobs:
       - uses: actions/setup-python@v5
         with: { python-version: "3.11" }
       - name: Install deps
-        run: |
-          python -m pip install -U pip
-          pip install pandas requests pdfminer.six google-generativeai
+  run: |
+    python -m pip install -U pip
+    # remove old v1beta client if it is present
+    pip uninstall -y google-genai || true
+    # install stable client explicitly
+    pip install --no-cache-dir google-generativeai==0.7.2 pandas==2.2.2 requests==2.32.3 pdfminer.six==20231228
+    # sanity print to confirm which module is loaded
+    python - <<'PY'
+import google.generativeai as genai, sys
+print("GENAI OK", getattr(genai, "__version__", "unknown"), genai.__file__)
+PY
+
       - name: Extract guidance (real mode)
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
