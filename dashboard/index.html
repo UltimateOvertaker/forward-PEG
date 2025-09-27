@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Forward PEG Screener — Real Mode</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+</head>
+<body class="bg-slate-50 text-slate-900">
+  <div class="max-w-7xl mx-auto p-6">
+    <header class="mb-6">
+      <h1 class="text-2xl font-semibold tracking-tight">Forward PEG Screener — Real Mode</h1>
+      <p class="text-sm text-slate-600 mt-1">This page loads the latest computed CSV from your GitHub repo.</p>
+    </header>
+    <section class="bg-white rounded-2xl shadow overflow-hidden">
+      <div class="px-4 py-3 border-b border-slate-100 flex items-center gap-4 flex-wrap">
+        <input id="searchInput" type="text" placeholder="Search company or symbol…" class="w-64 max-w-full px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 text-sm" />
+        <div class="text-xs text-slate-500">Click column headers to sort</div>
+        <div class="ml-auto text-xs text-slate-500">CSV: <a id="srcLink" class="underline" href="#" target="_blank" rel="noreferrer">forward_peg.csv</a></div>
+      </div>
+      <div class="overflow-x-auto">
+        <table id="dataTable" class="min-w-full text-sm">
+          <thead class="bg-slate-50/70">
+            <tr class="text-left">
+              <th data-key="Company" class="px-4 py-3 font-medium cursor-pointer">Company</th>
+              <th data-key="Symbol" class="px-4 py-3 font-medium cursor-pointer">Symbol</th>
+              <th data-key="Metric" class="px-4 py-3 font-medium cursor-pointer">Metric</th>
+              <th data-key="GrowthType" class="px-4 py-3 font-medium cursor-pointer">Growth Type</th>
+              <th data-key="GrowthLow" class="px-4 py-3 font-medium cursor-pointer">Low %</th>
+              <th data-key="GrowthHigh" class="px-4 py-3 font-medium cursor-pointer">High %</th>
+              <th data-key="GrowthMid" class="px-4 py-3 font-medium cursor-pointer">Mid %</th>
+              <th data-key="Horizon" class="px-4 py-3 font-medium cursor-pointer">Horizon</th>
+              <th data-key="PE" class="px-4 py-3 font-medium cursor-pointer">PE</th>
+              <th data-key="PEG" class="px-4 py-3 font-medium cursor-pointer">PEG</th>
+              <th data-key="CFO_PAT_Cum" class="px-4 py-3 font-medium cursor-pointer">CFO/PAT (cum)</th>
+              <th data-key="BasePeriod" class="px-4 py-3 font-medium cursor-pointer">Base</th>
+              <th data-key="TargetPeriod" class="px-4 py-3 font-medium cursor-pointer">Target</th>
+              <th data-key="Source" class="px-4 py-3 font-medium cursor-pointer">Source Link</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
+  </div>
+
+<script>
+  // 🔧 Replace USER/REPO after uploading to GitHub
+  window.sampleCsvUrl = "https://raw.githubusercontent.com/USER/REPO/main/data/forward_peg.csv";
+</script>
+<script>
+(function(){
+  const $ = (id)=>document.getElementById(id);
+  const table = document.getElementById('dataTable');
+  const tbody = table.querySelector('tbody');
+  let rows=[], filtered=[], sortState={key:'PEG', asc:true};
+
+  function parseNumber(x){ if(x==null) return null; const n=parseFloat(String(x).replace(/[,%\s]/g,'')); return isFinite(n)?n:null; }
+  function fmt(x,d=2){ if(x==null||!isFinite(x)) return ''; return Number(x).toFixed(d); }
+  function badge(text, tone){
+    const map={good:'bg-emerald-50 text-emerald-700', warn:'bg-amber-50 text-amber-700', bad:'bg-rose-50 text-rose-700', info:'bg-slate-100 text-slate-700'};
+    const cls=map[tone]||map.info; return `<span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${cls}">${text}</span>`;
+  }
+  function rowHtml(r){
+    const pegTone = (r.PEG!=null) ? (r.PEG<=1 ? 'good' : r.PEG<=1.5 ? 'warn' : 'bad') : 'info';
+    const cfoTone = (r.CFO_PAT_Cum!=null) ? (r.CFO_PAT_Cum>=1 ? 'good' : 'bad') : 'info';
+    const metricTone = (String(r.Metric||'').toUpperCase()==='PAT') ? 'bg-amber-50 text-amber-700' : 'bg-indigo-50 text-indigo-700';
+    const sourceLink = r.Source ? `<a class="underline" href="${r.Source}" target="_blank" rel="noreferrer">Open</a>` : '';
+    return `<tr class="border-t border-slate-100 hover:bg-slate-50/40">
+      <td class="px-4 py-2 font-medium">${r.Company||''}</td>
+      <td class="px-4 py-2">${r.Symbol||''}</td>
+      <td class="px-4 py-2"><span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${metricTone}">${r.Metric||''}</span></td>
+      <td class="px-4 py-2">${r.GrowthType||''}</td>
+      <td class="px-4 py-2">${fmt(r.GrowthLow)}</td>
+      <td class="px-4 py-2">${fmt(r.GrowthHigh)}</td>
+      <td class="px-4 py-2">${fmt(r.GrowthMid)}</td>
+      <td class="px-4 py-2">${r.Horizon||''}</td>
+      <td class="px-4 py-2">${fmt(r.PE)}</td>
+      <td class="px-4 py-2">${r.PEG!=null ? badge(fmt(r.PEG), pegTone) : ''}</td>
+      <td class="px-4 py-2">${r.CFO_PAT_Cum!=null ? badge(fmt(r.CFO_PAT_Cum), cfoTone) : ''}</td>
+      <td class="px-4 py-2">${r.BasePeriod||''}</td>
+      <td class="px-4 py-2">${r.TargetPeriod||''}</td>
+      <td class="px-4 py-2">${sourceLink}</td>
+    </tr>`;
+  }
+  function render(){
+    const q = $("searchInput").value.trim().toLowerCase();
+    filtered = rows.filter(r => !q || (r.Company||'').toLowerCase().includes(q) || (r.Symbol||'').toLowerCase().includes(q));
+    filtered.sort((a,b)=>{
+      const {key,asc}=sortState; const va=a[key], vb=b[key];
+      if(va==null&&vb==null) return 0; if(va==null) return 1; if(vb==null) return -1;
+      if(typeof va==='number' && typeof vb==='number') return asc?va-vb:vb-va;
+      const sa=String(va).toLowerCase(), sb=String(vb).toLowerCase(); return asc?sa.localeCompare(sb):sb.localeCompare(sa);
+    });
+    tbody.innerHTML = filtered.map(rowHtml).join("");
+  }
+  table.querySelectorAll('th[data-key]').forEach(th=>{
+    th.addEventListener('click', ()=>{ const key=th.getAttribute('data-key'); if(sortState.key===key) sortState.asc=!sortState.asc; else {sortState.key=key; sortState.asc=true;} render(); });
+  });
+  $("searchInput").addEventListener('input', render);
+
+  const url = window.sampleCsvUrl;
+  document.getElementById('srcLink').href = url;
+  fetch(url).then(r=>r.text()).then(text=>{
+    const parsed = Papa.parse(text, {header:true, skipEmptyLines:true});
+    rows = parsed.data.map(rec => {
+      const pe = parseNumber(rec.PE), low = parseNumber(rec.GrowthLow), high=parseNumber(rec.GrowthHigh);
+      let mid=null; if(low!=null&&high!=null) mid=(low+high)/2; else if(low!=null) mid=low; else if(high!=null) mid=high;
+      let peg=null; if(pe!=null&&mid!=null&&mid!==0) peg=pe/mid;
+      return {...rec, GrowthLow:low, GrowthHigh:high, GrowthMid:mid, PEG:peg};
+    });
+    render();
+  }).catch(()=>{ tbody.innerHTML = '<tr><td class="px-4 py-6 text-slate-500" colspan="14">Could not load CSV. Check your Pages URL and window.sampleCsvUrl.</td></tr>'; });
+})();
+</script>
+</body>
+</html>
