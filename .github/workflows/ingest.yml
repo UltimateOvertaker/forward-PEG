@@ -17,7 +17,7 @@ jobs:
       - name: Install deps
         run: |
           python -m pip install -U pip
-          pip install pandas requests pdfminer.six google-genai
+          pip install pandas requests pdfminer.six google-generativeai
       - name: Extract guidance (real mode)
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
