@@ -1,7 +1,8 @@
 name: ingest-and-build
+
 on:
   schedule: [{ cron: "0 3 * * *" }]  # daily ~08:30 IST
-  workflow_dispatch:                 # <-- enables the "Run workflow" button
+  workflow_dispatch:                  # enables the "Run workflow" button
 
 jobs:
   run:
@@ -10,29 +11,32 @@ jobs:
       contents: write
       pages: write
       id-token: write
+
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with: { python-version: "3.11" }
 
-      # Install deps (force the correct Gemini client)
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      # Force the correct Gemini client and print its version so we can verify in logs
       - name: Install deps
         run: |
           python -m pip install -U pip
           pip uninstall -y google-genai || true
           pip install --no-cache-dir google-generativeai==0.7.2 pandas==2.2.2 requests==2.32.3 pdfminer.six==20231228
           python - <<'PY'
-import google.generativeai as genai, sys
+import google.generativeai as genai
 print("GENAI OK", getattr(genai, "__version__", "unknown"), genai.__file__)
 PY
 
-      # (Optional but helpful) show your inputs
+      # Show inputs for sanity
       - name: Debug inputs
         run: |
           echo '--- data/seed_sources.csv ---'
-          test -f data/seed_sources.csv && sed -n '1,60p' data/seed_sources.csv || echo 'MISSING'
+          test -f data/seed_sources.csv && sed -n '1,80p' data/seed_sources.csv || echo 'MISSING'
           echo '--- data/pe_snapshots.csv ---'
-          test -f data/pe_snapshots.csv && sed -n '1,60p' data/pe_snapshots.csv || echo 'MISSING'
+          test -f data/pe_snapshots.csv && sed -n '1,80p' data/pe_snapshots.csv || echo 'MISSING'
 
       - name: Extract guidance (real mode)
         env:
@@ -44,13 +48,13 @@ PY
         run: |
           python src/compute_metrics.py
 
-      # Show outputs so we know what was produced
+      # Show outputs so we can confirm rows were produced
       - name: Debug outputs
         run: |
           echo '--- data/guidance_facts.csv ---'
-          test -f data/guidance_facts.csv && sed -n '1,60p' data/guidance_facts.csv || echo 'MISSING'
+          test -f data/guidance_facts.csv && sed -n '1,80p' data/guidance_facts.csv || echo 'MISSING'
           echo '--- data/forward_peg.csv ---'
-          test -f data/forward_peg.csv && sed -n '1,60p' data/forward_peg.csv || echo 'MISSING'
+          test -f data/forward_peg.csv && sed -n '1,80p' data/forward_peg.csv || echo 'MISSING'
 
       - name: Commit data
         run: |
